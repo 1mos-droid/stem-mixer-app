@@ -1,57 +1,90 @@
-# STEM STUDIO PRO
+# 🎚️ STEM STUDIO PRO
 
-# **Licensing & Commercial Use**
+[![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial-blue.svg)](LICENSE)
+[![Flutter](https://img.shields.io/badge/Flutter-%2302569B.svg?style=flat&logo=Flutter&logoColor=white)](https://flutter.dev)
+[![C++](https://img.shields.io/badge/C++-%2300599C.svg?style=flat&logo=c%2B%2B&logoColor=white)](https://isocpp.org/)
+[![AI-Powered](https://img.shields.io/badge/AI--Powered-ONNX-orange.svg)](https://onnxruntime.ai/)
 
-**This audio engine is available for personal and non-commercial research. For commercial use, integration into proprietary DAWs, or SaaS deployment, you must purchase a commercial license. Contact [isemuk8@gmail.com] for pricing.**
+**Stem Studio Pro** is a professional-grade audio separation and music analysis workstation. Designed for musicians, producers, and researchers, it bridges the gap between high-performance native inference and cloud-scale AI processing.
 
 ---
 
-## Overview
+## 🚀 Key Features
 
-Stem Studio Pro is a high-performance audio separation and analysis application. It combines a native C++ inference engine with a cloud-based "Pro Suite" to provide professional-grade stem separation, music theory analysis, and structural song mapping.
+### 🌈 Hybrid Separation Engine
+*   **Local AI Power:** Zero-latency, offline separation using a quantized **ONNX Demucs** model (optimized for ARM64).
+*   **Cloud Pro Suite:** High-fidelity **6-stem separation** (Vocals, Drums, Bass, Piano, Guitar, Other) for the most demanding audio projects.
+*   **HLS Streaming:** Efficient delivery of cloud-processed stems via HTTP Live Streaming.
 
-## Features
+### 🎼 Advanced Music Theory Suite
+*   **AI Key Detection:** Instantly identify the root key and scale of any track with high precision.
+*   **Live Chord Extraction:** Real-time chord progression mapping synchronized perfectly with playback.
+*   **Smart Transposition:** High-fidelity pitch shifting that automatically tracks key changes.
 
-### 1. Hybrid Separation Engine
-*   **Local AI Engine:** Uses a quantized ONNX Demucs model for zero-latency, offline separation on high-end devices (ARM64 optimized).
-*   **Cloud Pro Suite:** Leverages a high-fidelity 6-stem model (Vocals, Drums, Bass, Other, Piano, Guitar) for complex arrangements.
+### 📐 Structural Song Mapping
+*   **Segment Analysis:** AI-driven identification of song sections (Intro, Verse, Chorus, Bridge, Outro).
+*   **Instant Navigation:** One-tap looping and navigation between song structural boundaries.
+*   **Metronome Generation:** Synchronized AI click tracks generated based on extracted tempo.
 
-### 2. Music Theory Suite
-*   **Key Detection:** Automatically identifies the musical key and scale of any track.
-*   **Chord Extraction:** Real-time chord progression mapping synchronized with audio playback.
-*   **Smart Transposition:** High-quality pitch shifting that keeps track of the modified key.
+---
 
-### 3. Structural Song Mapping
-*   **AI Song Structure:** Automatically identifies 4-5 major structural boundaries (Intro, Verse, Chorus, etc.).
-*   **Smart Looping:** Instant navigation and looping of specific song sections.
-*   **Metronome Generation:** AI-generated click tracks synchronized to the song's tempo.
+## 🏗️ Architecture
 
-## Architecture
+| Component | Technology | Responsibility |
+| :--- | :--- | :--- |
+| **`core_engine/`** | C++, FFmpeg, ONNX Runtime | Native inference, high-speed audio decoding, and FFI bindings. |
+| **`stem_ui/`** | Flutter, Dart | Glassmorphic UI, multi-track mixing, and real-time visualization. |
+| **`cloud_backend/`** | Python, FastAPI, Librosa, Demucs | 6-stem separation, HLS conversion, and deep music analysis. |
+| **`model_builder/`** | PyTorch, ONNX | Training and exporting optimized AI models for mobile devices. |
 
-*   **`core_engine/`**: The native C++ core. Handles high-performance audio decoding (FFmpeg), AI inference (ONNX Runtime), and FFI bindings for Flutter.
-*   **`stem_ui/`**: The Flutter-based frontend. Features a modern, glassmorphic UI with real-time waveform visualization and multi-track mixing.
-*   **`cloud_backend/`**: A Gradio-based API for handling high-fidelity separation and advanced music metrics.
+---
 
-## Security & Privacy
+## 🛠️ Getting Started
 
-*   **Public API:** The app uses a public Gradio API for cloud features. No private API keys are required for standard operation.
-*   **Local Processing:** When the local engine is used, audio data never leaves your device.
-*   **Sanitized Build:** Optimized build pipelines ensure no debug symbols or sensitive internal paths are leaked in the production binary.
+### 📋 Prerequisites
+*   **Flutter SDK** (3.x or higher)
+*   **Android NDK** (for building the native C++ engine)
+*   **Python 3.10+** (for the cloud backend)
 
-## Getting Started
-
-### Prerequisites
-*   Flutter SDK (3.x+)
-*   Android NDK (for native engine compilation)
-*   FFmpeg libraries (included in `jniLibs`)
-
-### Build for Android (Optimized)
-To build a lean, performance-optimized arm64 APK:
+### 🏗️ Building the Android App
+To build a lean, performance-optimized ARM64 APK:
 ```bash
 cd stem_ui
 chmod +x build_lite.sh
 ./build_lite.sh
 ```
 
-## Developer
-For technical inquiries or custom integrations, please reach out via the contact information in the Licensing section.
+### ☁️ Running the Backend
+```bash
+cd cloud_backend
+pip install -r requirements.txt
+python app.py
+```
+
+---
+
+## 🔒 Security & Privacy
+
+*   **Local-First:** When using the local engine, your audio stays private and never leaves your device.
+*   **Public API Ready:** Cloud features use a public Gradio-based API; no complex key management required for standard use.
+*   **Optimized Pipelines:** Production builds are sanitized to remove debug symbols and internal paths.
+
+---
+
+## ⚖️ License & Commercial Use
+
+This project is licensed under the **PolyForm Noncommercial License 1.0.0**.
+
+**⚠️ IMPORTANT NOTICE:**
+This audio engine is available for **personal and non-commercial research only**. 
+*   For commercial use, integration into proprietary DAWs, or SaaS deployment, you **must** purchase a commercial license. 
+*   Contact **[isemuk8@gmail.com]** for pricing and licensing inquiries.
+
+See the full [LICENSE](LICENSE) file for details.
+
+---
+
+## 👨‍💻 Developer
+For technical inquiries, custom integrations, or collaboration opportunities, feel free to reach out via the email listed above.
+
+*Built with ❤️ for the music community.*
