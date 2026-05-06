@@ -1,0 +1,6 @@
+demucs
+gradio
+librosa
+numpy
+scipy
+soundfile
