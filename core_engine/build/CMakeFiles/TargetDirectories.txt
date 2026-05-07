@@ -1,4 +1,0 @@
-/home/admin/Projects/stem_app/core_engine/build/CMakeFiles/stem_engine.dir
-/home/admin/Projects/stem_app/core_engine/build/CMakeFiles/stem_engine_ffi.dir
-/home/admin/Projects/stem_app/core_engine/build/CMakeFiles/edit_cache.dir
-/home/admin/Projects/stem_app/core_engine/build/CMakeFiles/rebuild_cache.dir

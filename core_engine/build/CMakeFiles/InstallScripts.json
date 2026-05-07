@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/home/admin/Projects/stem_app/core_engine/build/cmake_install.cmake"
-	],
-	"Parallel" : false
-}

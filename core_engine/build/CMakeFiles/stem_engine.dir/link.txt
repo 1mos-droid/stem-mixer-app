@@ -1,1 +1,0 @@
-/usr/bin/c++ -Wl,--dependency-file=CMakeFiles/stem_engine.dir/link.d CMakeFiles/stem_engine.dir/src/main.cpp.o CMakeFiles/stem_engine.dir/src/AudioDecoder.cpp.o CMakeFiles/stem_engine.dir/src/AudioEncoder.cpp.o CMakeFiles/stem_engine.dir/src/DemucsInference.cpp.o -o stem_engine  -lavformat -lavcodec -lavutil -lswresample /usr/lib/libonnxruntime.so
