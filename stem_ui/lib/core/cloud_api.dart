@@ -4,20 +4,65 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:flutter/foundation.dart';
 import 'package:http_parser/http_parser.dart';
+import 'package:dio/dio.dart' as dio_pkg;
+
+class SeparationResult {
+  final String taskId;
+  final Map<String, String> stems;
+  SeparationResult({required this.taskId, required this.stems});
+}
 
 class CloudEngine {
-  final String baseUrl = 'https://1mos-droid-stem-engine-api.hf.space';
+  // Common addresses for emulators/local dev
+  static const List<String> discoveryUrls = [
+    'http://10.0.2.2:7860',    // Android Emulator
+    'http://127.0.0.1:7860',   // iOS Simulator / Desktop
+    'http://192.168.100.9:7860', // LAN IP
+  ];
+  static const String fallbackUrl = 'https://1mos-droid-stem-engine-api.hf.space';
+  
+  String? _cachedBaseUrl;
+  String get baseUrl => _cachedBaseUrl ?? fallbackUrl;
+  
+  final dio_pkg.Dio _dio = dio_pkg.Dio();
+
+  Future<bool> _checkConnectivity(String url) async {
+    try {
+      debugPrint('CloudEngine: Probing $url...');
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 2));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _ensureWorkingUrl() async {
+    if (_cachedBaseUrl != null) return; // Use sticky session for the lifecycle
+
+    debugPrint('CloudEngine: Starting backend discovery...');
+    for (var url in discoveryUrls) {
+      if (await _checkConnectivity(url)) {
+        _cachedBaseUrl = url;
+        debugPrint('CloudEngine: SELECTED -> Local Backend ($url)');
+        return;
+      }
+    }
+    _cachedBaseUrl = fallbackUrl;
+    debugPrint('CloudEngine: SELECTED -> Fallback Cloud ($fallbackUrl)');
+  }
 
   Future<String?> uploadFile(String inputPath) async {
     try {
-      debugPrint('CloudEngine: Uploading audio...');
+      await _ensureWorkingUrl();
+      debugPrint('CloudEngine: Uploading audio to $baseUrl...');
       final file = File(inputPath);
       if (!await file.exists()) {
         debugPrint('CloudEngine: Error - Input file not found.');
         return null;
       }
 
-      final uploadRequest = http.MultipartRequest('POST', Uri.parse('$baseUrl/upload'));
+      final uploadUrl = '$baseUrl/gradio_api/upload';
+      final uploadRequest = http.MultipartRequest('POST', Uri.parse(uploadUrl));
       uploadRequest.files.add(await http.MultipartFile.fromPath(
         'files', 
         inputPath,
@@ -26,7 +71,7 @@ class CloudEngine {
 
       final uploadResponse = await uploadRequest.send();
       if (uploadResponse.statusCode != 200) {
-        debugPrint('CloudEngine: Upload failed (${uploadResponse.statusCode})');
+        debugPrint('CloudEngine: Upload failed (${uploadResponse.statusCode}) to $uploadUrl');
         return null;
       }
 
@@ -38,10 +83,10 @@ class CloudEngine {
     }
   }
 
-  Future<Map<String, String>?> separateAudio(String serverPath) async {
+  Future<SeparationResult?> separateAudio(String serverPath) async {
     try {
       debugPrint('CloudEngine: Creating separation job...');
-      final callUrl = '$baseUrl/call/separate_audio';
+      final callUrl = '$baseUrl/gradio_api/call/separate_audio';
       final callPayload = {
         "data": [
           {
@@ -76,57 +121,107 @@ class CloudEngine {
         return null;
       }
 
-      List<dynamic>? finalOutputs;
+      Map<String, dynamic>? finalData;
+      String lastRawLine = 'None';
       await for (final line in streamResponse.stream.transform(utf8.decoder).transform(const LineSplitter())) {
         if (line.startsWith('data: ')) {
+          lastRawLine = line;
           final dataContent = line.substring(6);
+          if (dataContent == 'null' || dataContent.isEmpty) continue;
+          
           try {
             final json = jsonDecode(dataContent);
-            if (json is Map && json['msg'] == 'process_completed' && json['output'] != null) {
-              finalOutputs = json['output']['data'];
-              break;
+            debugPrint('CloudEngine SSE: Received msg=${json is Map ? json['msg'] : 'N/A'}');
+
+            // Handle Gradio SSE message structure
+            dynamic rawOutput;
+            if (json is Map) {
+              if (json['msg'] == 'process_completed' && json['output'] != null) {
+                rawOutput = json['output']['data'];
+              } else if (json['msg'] == 'error') {
+                debugPrint('CloudEngine: Gradio Job Error - ${json['error']}');
+                break;
+              } else if (json['msg'] == 'complete' && json['output'] != null) {
+                rawOutput = json['output']['data'];
+              }
+            } else if (json is List) {
+              rawOutput = json;
             }
-            if (json is List) {
-              finalOutputs = json;
-              break;
+
+            if (rawOutput is List && rawOutput.isNotEmpty) {
+              final firstItem = rawOutput[0];
+              if (firstItem is Map) {
+                if (firstItem.containsKey('task_id')) {
+                  finalData = Map<String, dynamic>.from(firstItem);
+                  debugPrint('CloudEngine: Success! HLS Format detected.');
+                  break;
+                } else if (firstItem.containsKey('url') || firstItem.containsKey('path')) {
+                  // LEGACY FORMAT: List of FileData
+                  debugPrint('CloudEngine: Legacy File Format detected. Mapping to Task ID.');
+                  finalData = _mapLegacyToHls(rawOutput);
+                  break;
+                } else if (firstItem.containsKey('error')) {
+                  debugPrint('CloudEngine: Backend Process Error - ${firstItem['error']}');
+                  break;
+                }
+              }
             }
-            if (json is Map && json.containsKey('data') && json['data'] is List) {
-               finalOutputs = json['data'];
-               break;
-            }
-          } catch (_) {}
+          } catch (e) {
+            debugPrint('CloudEngine: SSE Parse Error - $e (Line: $dataContent)');
+          }
         }
       }
 
-      if (finalOutputs == null || finalOutputs.isEmpty) {
-        debugPrint('CloudEngine: Error - Could not retrieve stems from stream.');
+      if (finalData == null) {
+        debugPrint('CloudEngine: Error - Could not retrieve valid HLS stems from $baseUrl');
+        debugPrint('CloudEngine: Last received SSE line: $lastRawLine');
         return null;
       }
 
-      final nonNullOutputs = finalOutputs!;
-      final stemNames = ['vocals', 'drums', 'bass', 'other', 'piano', 'guitar'];
-      Map<String, String> stemUrls = {};
+      final taskId = finalData['task_id']?.toString() ?? '';
+      final streamsRaw = finalData['streams'] as Map<String, dynamic>? ?? finalData['stems'] as Map<String, dynamic>? ?? {};
       
-      int count = nonNullOutputs.length < 6 ? nonNullOutputs.length : 6;
-      for (int i = 0; i < count; i++) {
-        final stemUrl = nonNullOutputs[i];
-        if (stemUrl is String) {
-          stemUrls[stemNames[i]] = stemUrl.startsWith('http') ? stemUrl : '$baseUrl$stemUrl';
+      Map<String, String> stems = {};
+      streamsRaw.forEach((key, value) {
+        if (value is String) {
+          // If the backend already returns a full URL (starts with http), use it.
+          // Otherwise, concatenate with discovery results for legacy support.
+          stems[key] = value.startsWith('http') ? value : '$baseUrl$value';
         }
-      }
+      });
 
       client.close();
-      return stemUrls;
+      return SeparationResult(taskId: taskId, stems: stems);
     } catch (e) {
       debugPrint('CloudEngine: Network Error - $e');
       return null;
     }
   }
 
+  Map<String, dynamic> _mapLegacyToHls(List<dynamic> fileList) {
+    // Generate a dummy task ID for legacy files
+    final taskId = 'legacy-${DateTime.now().millisecondsSinceEpoch}';
+    Map<String, String> stems = {};
+    
+    for (var item in fileList) {
+      if (item is Map && item.containsKey('orig_name')) {
+        final name = (item['orig_name'] as String).replaceFirst('.wav', '').toLowerCase();
+        final url = item['url'] as String?;
+        if (url != null) stems[name] = url;
+      }
+    }
+    
+    return {
+      "task_id": taskId,
+      "stems": stems
+    };
+  }
+
   Future<Map<String, dynamic>> fetchAdvancedMetrics(String serverPath) async {
     try {
-      debugPrint('CloudEngine: Calling analyze_advanced_metrics...');
-      final callUrl = '$baseUrl/call/analyze_advanced_metrics';
+      await _ensureWorkingUrl();
+      debugPrint('CloudEngine: Calling analyze_advanced_metrics at $baseUrl...');
+      final callUrl = '$baseUrl/gradio_api/call/analyze_advanced_metrics';
       final callPayload = {
         "data": [
           {
@@ -191,8 +286,9 @@ class CloudEngine {
 
   Future<Map<String, dynamic>> detectKey(String serverPath) async {
     try {
-      debugPrint('CloudEngine: Calling detect_key...');
-      final callUrl = '$baseUrl/call/detect_key';
+      await _ensureWorkingUrl();
+      debugPrint('CloudEngine: Calling detect_key at $baseUrl...');
+      final callUrl = '$baseUrl/gradio_api/call/detect_key';
       final callPayload = {
         "data": [
           {
@@ -246,8 +342,9 @@ class CloudEngine {
 
   Future<List<dynamic>> extractChords(String serverPath) async {
     try {
-      debugPrint('CloudEngine: Calling extract_chords...');
-      final callUrl = '$baseUrl/call/extract_chords';
+      await _ensureWorkingUrl();
+      debugPrint('CloudEngine: Calling extract_chords at $baseUrl...');
+      final callUrl = '$baseUrl/gradio_api/call/extract_chords';
       final callPayload = {
         "data": [
           {
@@ -297,16 +394,17 @@ class CloudEngine {
     }
   }
 
-  void deleteServerFiles(String taskId) {
-    if (taskId.isEmpty) return;
+  Future<void> deleteServerFiles(String taskId) async {
+    if (taskId.isEmpty || taskId.startsWith('legacy-')) return;
     try {
       debugPrint('CloudEngine: Fire-and-forget cleanup for Task: $taskId');
-      // No await - fire and forget
-      http.delete(Uri.parse('$baseUrl/cleanup/$taskId')).catchError((e) {
-        debugPrint('CloudEngine: Cleanup Error (silently handled) - $e');
+      // No await - fire and forget (using dio as requested)
+      _dio.delete('$baseUrl/cleanup/$taskId').catchError((e) {
+        debugPrint('CloudEngine: Cleanup Error (silently handled)');
+        return dio_pkg.Response(requestOptions: dio_pkg.RequestOptions(path: ''));
       });
     } catch (e) {
-      debugPrint('CloudEngine: Cleanup Catch (silently handled) - $e');
+      debugPrint('CloudEngine: Cleanup Catch (silently handled)');
     }
   }
 }

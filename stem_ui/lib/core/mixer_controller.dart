@@ -90,20 +90,14 @@ class MixerController extends ChangeNotifier {
       // Step 2: 6-Stem Separation
       _status = "Separating stems...";
       notifyListeners();
-      final stemUrls = await _cloudEngine.separateAudio(serverPath);
-      if (stemUrls == null || stemUrls.isEmpty) {
+      final separationResult = await _cloudEngine.separateAudio(serverPath);
+      if (separationResult == null || separationResult.stems.isEmpty) {
         _status = "Cloud separation failed.";
         return false;
       }
 
-      // Extract Task ID from URLs (format: /static/{task_id}/{stem}/track.m3u8)
-      final firstUrl = stemUrls.values.first;
-      final uri = Uri.parse(firstUrl);
-      final segments = uri.pathSegments;
-      if (segments.length >= 2 && segments[0] == 'static') {
-        _currentTaskId = segments[1];
-        debugPrint("MixerController: Detected Task ID: $_currentTaskId");
-      }
+      _currentTaskId = separationResult.taskId;
+      debugPrint("MixerController: Detected Task ID: $_currentTaskId");
 
       // Step 3: Advanced Metrics
       _status = "Analyzing song structure...";
@@ -112,7 +106,7 @@ class MixerController extends ChangeNotifier {
 
       _status = "Initializing streams...";
       notifyListeners();
-      await _loadStems(stemUrls, _structureData['click_track_url'] ?? '');
+      await _loadStems(separationResult.stems, _structureData['click_track_url'] ?? '');
       
       _isLoaded = true;
       _status = "Mixer Active";
@@ -139,14 +133,17 @@ class MixerController extends ChangeNotifier {
         'Metronome': clickUrl,
       };
 
+      // Force Pre-Loading: Replace setAudioSource with explicit load() in parallel
       await Future.wait(tracks.map((track) async {
         final url = normalizedUrls[track.name];
         if (url != null && url.isNotEmpty) {
+          // Set the source without preloading, then call load() explicitly
           await track.player.setAudioSource(
             AudioSource.uri(Uri.parse(url)),
-            initialPosition: Duration.zero,
-            preload: true,
+            preload: false,
           );
+          await track.player.load();
+          
           await track.player.setVolume(track.isMuted ? 0 : track.volume);
           await track.player.setLoopMode(LoopMode.one);
         }

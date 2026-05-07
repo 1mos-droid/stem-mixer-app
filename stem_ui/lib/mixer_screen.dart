@@ -38,6 +38,7 @@ class _MixerScreenState extends State<MixerScreen> with WidgetsBindingObserver {
   final ModelManager _modelManager = ModelManager();
   
   bool _isSynchronizing = false;
+  bool _isFullyInitialized = false;
   double pitchSemitones = 0.0;
   double playbackSpeed = 1.0;
   int? originalRootIndex;
@@ -46,6 +47,7 @@ class _MixerScreenState extends State<MixerScreen> with WidgetsBindingObserver {
   String? activeSectionLabel;
   Set<String> soloedTracks = {};
   bool isMetronomeActive = false;
+  String? _currentTaskId;
   static const List<String> notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
   @override
@@ -66,6 +68,7 @@ class _MixerScreenState extends State<MixerScreen> with WidgetsBindingObserver {
   void _initSyncMonitor() {
     for (var track in _controller.tracks) {
       track.player.processingStateStream.listen((state) async {
+        if (!_isFullyInitialized) return;
         if (_isSynchronizing) return;
 
         final anyBuffering = _controller.tracks.any((t) => t.player.processingState == ProcessingState.buffering);
@@ -120,8 +123,8 @@ class _MixerScreenState extends State<MixerScreen> with WidgetsBindingObserver {
     }
     
     if (state == AppLifecycleState.detached) {
-      if (_controller.currentTaskId != null) {
-        _cloudEngine.deleteServerFiles(_controller.currentTaskId!);
+      if (_currentTaskId != null) {
+        _cloudEngine.deleteServerFiles(_currentTaskId!);
       }
     }
   }
@@ -233,8 +236,8 @@ class _MixerScreenState extends State<MixerScreen> with WidgetsBindingObserver {
     _controller.removeListener(_syncWaveformPlayback);
     
     // Cleanup server-side files on exit
-    if (_controller.currentTaskId != null) {
-      _cloudEngine.deleteServerFiles(_controller.currentTaskId!);
+    if (_currentTaskId != null) {
+      _cloudEngine.deleteServerFiles(_currentTaskId!);
     }
 
     for (var track in _controller.tracks) {
@@ -256,6 +259,7 @@ class _MixerScreenState extends State<MixerScreen> with WidgetsBindingObserver {
       for (var track in _controller.tracks) {
         await track.player.stop();
       }
+      setState(() => _isFullyInitialized = false);
 
       final success = await _controller.processFile(
         path,
@@ -265,10 +269,18 @@ class _MixerScreenState extends State<MixerScreen> with WidgetsBindingObserver {
       );
       
       if (success) {
+        setState(() {
+          _isFullyInitialized = true;
+          _currentTaskId = _controller.currentTaskId;
+        });
+        
         final pitchFactor = math.pow(2.0, pitchSemitones / 12.0);
         for (var track in _controller.tracks) {
           track.player.setPitch(pitchFactor.toDouble());
         }
+
+        // Start all players simultaneously after full initialization
+        _controller.togglePlayback();
 
         // Initialize metronome volume to 0.0 by default
         _controller.setVolume('Metronome', 0.0);
@@ -335,17 +347,23 @@ class _MixerScreenState extends State<MixerScreen> with WidgetsBindingObserver {
         textTheme: GoogleFonts.poppinsTextTheme(ThemeData.dark().textTheme),
       ),
       child: Scaffold(
-        body: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [StudioColors.backgroundStart, StudioColors.backgroundEnd],
+        body: PopScope(
+          onPopInvokedWithResult: (didPop, result) {
+            if (didPop && _currentTaskId != null) {
+              _cloudEngine.deleteServerFiles(_currentTaskId!);
+            }
+          },
+          child: Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [StudioColors.backgroundStart, StudioColors.backgroundEnd],
+              ),
             ),
-          ),
-          child: ListenableBuilder(
-            listenable: _controller,
-            builder: (context, _) {
+            child: ListenableBuilder(
+              listenable: _controller,
+              builder: (context, _) {
               return Stack(
                 children: [
                   SafeArea(
@@ -366,8 +384,9 @@ class _MixerScreenState extends State<MixerScreen> with WidgetsBindingObserver {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildBufferingOverlay() {
     return BackdropFilter(
